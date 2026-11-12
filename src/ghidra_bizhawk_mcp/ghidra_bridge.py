@@ -166,6 +166,7 @@ class GhidraSession:
         self,
         binary_path: str,
         session_id: Optional[str] = None,
+        analyze: bool = False,
     ) -> dict:
         binary_path = Path(binary_path).resolve()
         if not binary_path.exists():
@@ -179,7 +180,7 @@ class GhidraSession:
             self.close_session(sid)
 
         project_dir = tempfile.mkdtemp(prefix="ghidra_bizhawk_")
-        project_name = f"_{binary_path.stem}_mcp_{int(time.time())}"
+        project_name = f"_{_project_safe(binary_path.stem)}_mcp_{int(time.time())}"
 
         old_stdout = sys.stdout
         sys.stdout = sys.stderr
@@ -188,7 +189,7 @@ class GhidraSession:
                 binary_path=str(binary_path),
                 project_location=project_dir,
                 project_name=project_name,
-                analyze=False,
+                analyze=analyze,  # Ghidra's auto-analysis finds the functions; off by default
             )
             flat_api = cm.__enter__()
         finally:
@@ -305,7 +306,7 @@ class GhidraSession:
                 types.append({
                     "name": dt.getName(),
                     "path": dt.getPathName(),
-                    "category": dt.getCategory().getCategoryPath().getPath(),
+                    "category": dt.getCategoryPath().getPath(),  # DataType has no getCategory()
                     "size": dt.getLength(),
                     "type": dt.getClass().getSimpleName(),
                 })
@@ -355,7 +356,7 @@ class GhidraSession:
         self, function_name: str, max_depth: int = 3, session_id: Optional[str] = None
     ) -> dict:
         info = self._require_session(session_id)
-        func = _find_function(program, function_name)
+        func = _find_function(info.program, function_name)
         if func is None:
             raise ValueError(f"Function '{function_name}' not found")
 
@@ -385,8 +386,9 @@ class GhidraSession:
         fm = program.getFunctionManager()
 
         targets = set()
-        entry = program.getExecutableEntrySet()
-        for entry_addr in entry:
+        # Ghidra's Program has no getExecutableEntrySet(); the loader's entry points are external entry points in the
+        # symbol table.
+        for entry_addr in program.getSymbolTable().getExternalEntryPointIterator():
             targets.add(entry_addr)
 
         for func in fm.getFunctions(True):
@@ -394,10 +396,8 @@ class GhidraSession:
             if name in ("entry", "_start", "main", "WinMain", "DllMain", "DriverEntry"):
                 targets.add(func.getEntryPoint())
 
-        exports = program.getSymbolTable().getSymbolIterator()
-        for sym in exports:
-            if sym.getSymbolType().toString() == "Function":
-                targets.add(sym.getAddress())
+        # (Every Function symbol used to be added here too, which made this decompile the whole program once analysis
+        # had found its functions: thousands of decompiles in a GBA ROM. Entry points are only the two sets above.)
 
         decompiler = DecompInterface()
         decompiler.openProgram(program)
@@ -612,7 +612,7 @@ class GhidraSession:
             if not isinstance(cu, Instruction):
                 break
             mnemonic = cu.getMnemonicString()
-            op_str = cu.getDefaultOperandRepresentation()
+            op_str = ", ".join(cu.getDefaultOperandRepresentation(i) for i in range(cu.getNumOperands()))
             raw_bytes = _get_bytes(program, addr, cu.getLength())
             instructions.append({
                 "address": str(addr),
@@ -651,7 +651,7 @@ class GhidraSession:
                 break
             data_at = program.getListing().getDefinedDataAt(found)
             label = ""
-            if data_at is not None and data_at.isString():
+            if data_at is not None and data_at.hasStringValue():
                 label = data_at.getDefaultValueRepresentation()
             results.append({
                 "address": str(found),
@@ -831,7 +831,7 @@ class GhidraSession:
         from .tools.signatures import fingerprint_function
 
         info = self._require_session(session_id)
-        func = _find_function(program, func_name)
+        func = _find_function(info.program, func_name)
         if func is None:
             raise ValueError(f"Function '{func_name}' not found")
         return fingerprint_function(func, info.program)
@@ -906,6 +906,7 @@ class GhidraSession:
         self,
         rom_path: str,
         session_id: Optional[str] = None,
+        analyze: bool = False,
     ) -> dict:
         from .tools.retro_triage import detect_retro_platform
 
@@ -922,13 +923,13 @@ class GhidraSession:
 
         project_dir = tempfile.mkdtemp(prefix="ghidra_bizhawk_")
         short = platform_name.split()[0].lower().replace("/", "_")
-        project_name = f"_{rom_path.stem}_{short}_{int(time.time())}"
+        project_name = f"_{_project_safe(rom_path.stem)}_{short}_{int(time.time())}"
 
         kwargs = dict(
             binary_path=str(rom_path),
             project_location=project_dir,
             project_name=project_name,
-            analyze=False,
+            analyze=analyze,  # as in analyze_binary
         )
         if lang_id != "Auto-Detect":
             kwargs["language"] = lang_id
@@ -975,6 +976,12 @@ class GhidraSession:
 
 
 # ── Helpers ─────────────────────────────────────────────────────────────
+
+def _project_safe(stem: str) -> str:
+    """A Ghidra project name from a file name: Ghidra rejects characters such as ',' (ROM names like
+    'Advance Wars 2 - Black Hole Rising (USA, Australia)')."""
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("_") or "program"
+
 
 def _find_function(program, name_or_addr: str):
     fm = program.getFunctionManager()

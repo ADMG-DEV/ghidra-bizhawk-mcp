@@ -127,7 +127,7 @@ def _collect_strings(func, program) -> list[str]:
             to_addr = ref.getToAddress()
             if not body.contains(to_addr):
                 data = listing.getDefinedDataAt(to_addr)
-                if data is not None and data.isString():
+                if data is not None and data.hasStringValue():
                     try:
                         val = data.getDefaultValueRepresentation()
                         if val and len(val) > 1:
@@ -174,7 +174,7 @@ def _count_branches(func, program) -> int:
     body = func.getBody()
     listing = program.getListing()
     from ghidra.program.model.listing import Instruction
-    from ghidra.program.model.lang import FlowType
+    from ghidra.program.model.symbol import FlowType
     addr_iter = listing.getCodeUnits(body, True)
 
     while addr_iter.hasNext():

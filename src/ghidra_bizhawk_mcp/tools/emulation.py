@@ -65,7 +65,7 @@ def emulate_instruction_slice(
 
     for step_index in range(instruction_count):
         pc_offset = emu.readRegister("PC")
-        pc_addr = addr_factory.getAddress(pc_offset)
+        pc_addr = addr_factory.getDefaultAddressSpace().getAddress(pc_offset.longValue())  # readRegister gives a java.math.BigInteger
 
         # Fetch the instruction about to execute
         cu = program.getListing().getCodeUnitAt(pc_addr)
@@ -78,7 +78,7 @@ def emulate_instruction_slice(
             })
             break
 
-        instr_str = f"{cu.getMnemonicString()} {cu.getDefaultOperandRepresentation()}"
+        instr_str = f"{cu.getMnemonicString()} {', '.join(cu.getDefaultOperandRepresentation(i) for i in range(cu.getNumOperands()))}"
 
         # Single-step
         ok = emu.step(monitor)
@@ -160,7 +160,7 @@ def emulate_slice_with_taint(
 
     for step_index in range(instruction_count):
         pc_offset = emu.readRegister("PC")
-        pc_addr = addr_factory.getAddress(pc_offset)
+        pc_addr = addr_factory.getDefaultAddressSpace().getAddress(pc_offset.longValue())  # readRegister gives a java.math.BigInteger
 
         cu = program.getListing().getCodeUnitAt(pc_addr)
         if cu is None or not isinstance(cu, Instruction):
@@ -171,7 +171,7 @@ def emulate_slice_with_taint(
             })
             break
 
-        instr_str = f"{cu.getMnemonicString()} {cu.getDefaultOperandRepresentation()}"
+        instr_str = f"{cu.getMnemonicString()} {', '.join(cu.getDefaultOperandRepresentation(i) for i in range(cu.getNumOperands()))}"
 
         ok = emu.step(monitor)
         if not ok:
@@ -267,7 +267,7 @@ def emulate_slice_with_breakpoints(
 
     for step_index in range(instruction_count):
         pc_offset = emu.readRegister("PC")
-        pc_addr = addr_factory.getAddress(pc_offset)
+        pc_addr = addr_factory.getDefaultAddressSpace().getAddress(pc_offset.longValue())  # readRegister gives a java.math.BigInteger
 
         cu = program.getListing().getCodeUnitAt(pc_addr)
         if cu is None or not isinstance(cu, Instruction):
@@ -278,7 +278,7 @@ def emulate_slice_with_breakpoints(
             })
             break
 
-        instr_str = f"{cu.getMnemonicString()} {cu.getDefaultOperandRepresentation()}"
+        instr_str = f"{cu.getMnemonicString()} {', '.join(cu.getDefaultOperandRepresentation(i) for i in range(cu.getNumOperands()))}"
 
         # Check break condition BEFORE stepping (we're about to execute this instruction)
         regs_before = {}

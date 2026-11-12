@@ -60,9 +60,14 @@ def _structured_content(result):
 
 
 def _tool_success(result) -> types.CallToolResult:
-    structured = _structured_content(result)
+    import json
+    text = _format_result(_structured_content(result))
+    # Results can hold Java objects (a function's signature, for one). The text form turns them into strings; the
+    # structured content must be the same plain JSON, or the MCP transport can't serialize the reply and drops it
+    # without an error, leaving the client waiting for ever.
+    structured = json.loads(text)
     return types.CallToolResult(
-        content=[types.TextContent(type="text", text=_format_result(structured))],
+        content=[types.TextContent(type="text", text=text)],
         structuredContent=structured,
         isError=False,
     )
@@ -164,6 +169,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "binary_path": {"type": "string", "description": "Absolute path to the binary file to analyze. Supports ELF, PE, Mach-O, and raw binaries."},
+                "analyze": {"type": "boolean", "default": False, "description": "Run Ghidra's auto-analysis after loading, so functions exist for decompile, call graph, fingerprint and the other function tools. Takes minutes on a large ROM. Default false: load only."},
                 "session_id": {"type": "string", "description": "Optional session tracking ID. Auto-generated if omitted. Use to reuse a session across multiple tool calls."},
             },
             "required": ["binary_path"],
@@ -606,6 +612,7 @@ TOOLS = [
             "type": "object",
             "properties": {
                 "rom_path": {"type": "string", "description": "Absolute system path to the targeted emulator ROM image or raw memory partition block dump"},
+                "analyze": {"type": "boolean", "default": False, "description": "Run Ghidra's auto-analysis after loading, so functions exist for decompile, call graph, fingerprint and the other function tools. Takes minutes on a large ROM. Default false: load only."},
                 "session_id": {"type": "string", "description": "Optional session tracking token for parallel multi-binary session context"},
             },
             "required": ["rom_path"],
@@ -979,6 +986,7 @@ async def _dispatch(name: str, args: dict, session):
         return session.analyze_binary(
             binary_path=args["binary_path"],
             session_id=args.get("session_id"),
+            analyze=bool(args.get("analyze", False)),
         )
     if name == "ghidra_sessions":
         return session.list_sessions()
@@ -1118,6 +1126,7 @@ async def _dispatch(name: str, args: dict, session):
         return session.triage_and_load_retro_rom(
             rom_path=args["rom_path"],
             session_id=args.get("session_id"),
+            analyze=bool(args.get("analyze", False)),
         )
 
     # ── BizHawk live emulation ──────────────────────────────────────────
