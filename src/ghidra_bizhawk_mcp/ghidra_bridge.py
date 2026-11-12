@@ -154,6 +154,14 @@ class GhidraSession:
             except Exception:
                 pass
 
+    def close_all_sessions(self):
+        """Close every session, deleting its temporary project folder (called when the server stops)."""
+        for sid in list(self._sessions):
+            try:
+                self.close_session(sid)
+            except Exception:
+                logger.exception("Closing session %s failed", sid)
+
     def analyze_binary(
         self,
         binary_path: str,
@@ -162,6 +170,9 @@ class GhidraSession:
         binary_path = Path(binary_path).resolve()
         if not binary_path.exists():
             raise FileNotFoundError(f"Binary not found: {binary_path}")
+        # Wait for the JVM boot (or start it): open_program would otherwise launch PyGhidra a second time, from
+        # GHIDRA_INSTALL_DIR alone, and fail while the background boot is still running.
+        self.start()
 
         sid = session_id or self._make_session_id()
         if sid in self._sessions:
@@ -903,6 +914,7 @@ class GhidraSession:
             raise FileNotFoundError(f"Binary not found: {rom_path}")
 
         platform_name, lang_id, loader_name = detect_retro_platform(str(rom_path))
+        self.start()  # as in analyze_binary
 
         sid = session_id or self._make_session_id()
         if sid in self._sessions:
@@ -954,7 +966,8 @@ class GhidraSession:
             "status": "Workspace successfully provisioned",
             "session_id": sid,
             "target_platform": platform_name,
-            "selected_loader_engine": loader_name,
+            # The loader Ghidra chose (it picks one itself; detect_retro_platform's name is only the expected one).
+            "selected_loader_engine": info.program.getExecutableFormat(),
             "architecture_language_tag": info.program.getLanguageID().getIdAsString(),
             "memory_spaces_mapped": [block.getName() for block in info.program.getMemory().getBlocks()],
             "persistence_cache_status": restore_status,

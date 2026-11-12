@@ -837,7 +837,12 @@ async def serve(ghidra_dir: str | None = None):
     if not mock_mode:
         from .ghidra_bridge import GhidraSession
         session = GhidraSession(ghidra_dir=ghidra_dir or os.environ.get("GHIDRA_INSTALL_DIR"))
-        asyncio.create_task(_boot_jvm(session))
+        # Boot the JVM before the stdio transport starts reading stdin. On Windows a thread blocked reading the stdin
+        # pipe stalls the JVM's start until more input arrives, so a boot in the background never finished while a
+        # client waited for its first Ghidra reply.
+        logger.info("Booting JVM...")
+        session.start()
+        logger.info("JVM ready")
     else:
         logger.info("MOCK_MODE=1 — skipping GhidraSession import, bridge, and JVM boot")
         session = None
@@ -962,6 +967,8 @@ async def serve(ghidra_dir: str | None = None):
             )
     finally:
         await get_bridge().stop()
+        if session is not None:
+            session.close_all_sessions()
 
 
 async def _dispatch(name: str, args: dict, session):
@@ -1238,13 +1245,6 @@ async def _dispatch(name: str, args: dict, session):
 
     raise ValueError(f"Unknown tool: {name}")
 
-
-async def _boot_jvm(session):
-    """Boot JVM in background thread so MCP initialize responds instantly."""
-    logger.info("Booting JVM in background (this may take 30-60 seconds)...")
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, session.start)
-    logger.info("JVM ready")
 
 
 def _format_result(obj) -> str:

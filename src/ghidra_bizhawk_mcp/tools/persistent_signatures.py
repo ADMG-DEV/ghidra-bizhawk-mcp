@@ -8,7 +8,9 @@ from .signatures import export_signature_map, apply_signature_map
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = os.path.join(os.path.expanduser("~"), ".ghidra_bizhawk_mcp", "signatures")
+# GHIDRA_BIZHAWK_MCP_CACHE_DIR moves the cache (for example into a tool folder); the default is in the user's home.
+CACHE_DIR = os.environ.get("GHIDRA_BIZHAWK_MCP_CACHE_DIR") or os.path.join(
+    os.path.expanduser("~"), ".ghidra_bizhawk_mcp", "signatures")
 
 
 def _ensure_cache():
